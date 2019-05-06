@@ -2,7 +2,7 @@
 #   CRDE - Kernel                                                             #
 #   Version: 0.1.0                                                            #  
 #   Author: Compeador                                                         #  
-#   Last update: 2019.05.02                                                   #  
+#   Last update: 2019.05.06                                                   #  
 #=============================================================================#
 $imported = {} if $imported.nil?
 $imported[:CRDE_Kernel] = true
@@ -33,6 +33,8 @@ $imported[:CRDE_Kernel] = true
 # > Introduction:                                                             #
 #       This script overwrites and alias lots of default class method for     #
 # other CRDE script.                                                          #
+# This script is required for all CRDE scripts even if it has not D&D/TRPG-   #
+# -like featrues.                                                             #
 #=============================================================================#
 #                            ** Compatibility **                              #
 #-----------------------------------------------------------------------------#
@@ -46,9 +48,257 @@ $imported[:CRDE_Kernel] = true
 # ** Module of this script
 #=============================================================================
 module CRDE
-  module Kernel
-    # Nothing to add
+  module Config
+    # If set to true, secure codes will be implemented to avoid your
+    # game being exploited. Notice that nothing is 100% guaranteed safe
+    SecureMode = true
+  end # Config
+  #=============================================================================
+  # ** Object that includes in module will block some method access
+  #=============================================================================
+  module SecureObject
+    #--------------------------------------------------------------------------
+    def block_insure_action(msg)
+      raise SecurityError, "Insecure operation: #{msg}"
+    end
+    #--------------------------------------------------------------------------
+    def send(*args)
+      block_insure_action(:send)
+    end
+    #--------------------------------------------------------------------------
+    def method(*args)
+      block_insure_action(:method)
+    end
+    #--------------------------------------------------------------------------
+    def singleton_method(*args)
+      block_insure_action(:singleton_method)
+    end
+    #--------------------------------------------------------------------------
+    def instance_eval(*args)
+      block_insure_action(:instance_eval)
+    end
+    #--------------------------------------------------------------------------
   end
+  #--------------------------------------------------------------------------
+  module Kernel
+    include SecureObject if Config::SecureMode
+    #--------------------------------------------------------------------------
+    # * Ruby Constants
+    #--------------------------------------------------------------------------
+    RUBY_Qfalse = 0
+    RUBY_Qtrue  = 2
+    RUBY_Qnil   = 4
+    RUBY_Qundef = 6
+    RUBY_IMMEDIATE_MASK = 0x03
+    RUBY_FIXNUM_FLAG    = 0x01
+    RUBY_SYMBOL_FLAG    = 0x0e
+    RUBY_SPECIAL_SHIFT  = 8
+    #--------------------------------------------------------------------------
+    class << self
+    #--------------------------------------------------------------------------
+    # * Convery address back to object
+    #--------------------------------------------------------------------------
+    def VALUE2obj(address)
+      return ObjectSpace._id2ref(address >> 1)
+    end
+    #--------------------------------------------------------------------------
+    # * Convert address back to Symbol
+    #--------------------------------------------------------------------------
+    def ID2SYM(address)
+      return ObjectSpace._id2ref(address >> RUBY_SPECIAL_SHIFT)
+    end
+    #------------------------------------------------------------------------------
+    def report_exception(error, ex_caller=[])
+      scripts_name = load_data('Data/Scripts.rvdata2')
+      scripts_name.collect! {|script|  script[1]  }
+      backtrace = []
+      (error.backtrace + ex_caller).each_with_index {|line,i|
+        if line =~ /{(.*)}(.*)/
+          backtrace << (scripts_name[$1.to_i] + $2)
+        elsif line.start_with?(':1:')
+          break
+        else
+          backtrace << line
+        end
+      }
+      error_line = backtrace.first
+      backtrace[0] = ''
+      err_class = " (#{error.class})"
+      back_trace_txt = backtrace.join("\n\tfrom ")
+      error_txt = sprintf("%s %s %s %s %s %s",error_line, ": ", error.message, err_class, back_trace_txt, "\n" )
+      print error_txt
+      return error_txt
+    end
+    #--------------------------------------------------------------------------
+    end # class << self
+    #--------------------------------------------------------------------------
+  end # Kernel
+  #=============================================================================
+  # * Error Messages
+  #=============================================================================
+  module Errno
+    include SecureObject if Config::SecureMode
+    #--------------------------------------------------------------------------
+    @raised = false
+    @error_queue = []
+    CRDE_Errno = Struct.new(:symbol, :callback, :err_args, :cb_args, :ex_info, :caller)
+    RaiseMethod = method(:raise)
+    #--------------------------------------------------------------------------
+    # * Table of corresponding errors to message
+    #--------------------------------------------------------------------------
+    SymTable = {
+      :type_error         => "Expected %s, received %s\n",
+      :secure_hash_failed => "Security hash match failed:\n",
+      :config_error       => "Script configuration error:\n",
+      :file_missing       => "Cannot load such missing file:\n",
+      :data_overflow      => "%s Overflow\n",
+      :argument_error     => "Expected %s, received %d\n",
+      :dependency_error   => "Dependency file `%s` not found for script `%s`, please make sure you have the script installed and placed in correct order\n",
+    }
+    #--------------------------------------------------------------------------
+    class << self
+      include SecureObject if Config::SecureMode
+    #--------------------------------------------------------------------------
+    # * Add an error to queue
+    #   Params:
+    #   symbol:: The error symbol
+    #   callback:: The [Method] to call after the error is raised
+    #   args::
+    #     [-1]:: Extra message to display, must be string if present
+    #     [0]:: Arguments for the errno function, should be undef/nil/array
+    #     [1]:: Arguments for the callback function, should be undef/nil/array
+    #   example:
+    #   +rasie(:type_error, nil, [exptected.class, received.class])+
+    #   +rasie(:data_overflow, :exit, "Int32")+
+    #   +rasie(:file_missing, :puts, ["Kernel.rb", "foo.rb"], ["puts arg1", "puts arg2"])+
+    #   +rasie(:secure_hash_failed, :exit, "You dirty hacker")+
+    #--------------------------------------------------------------------------
+    def raise_error(symbol, callback=nil, *args)
+      ex_info  = args.pop if args.last.is_a?(String)
+      err_args = cb_args = nil
+      case args.length
+      when 1
+        err_args = args[0]
+      when 2
+        err_args, cb_args = args[0], args[1]
+      end
+      @error_queue << CRDE_Errno.new(symbol, callback, err_args, cb_args, ex_info || '', caller)
+      start_raise
+    end
+    #--------------------------------------------------------------------------
+    def start_raise
+      while !@error_queue.empty?
+        begin
+          err = @error_queue.shift
+          _raise_error(err)
+          execute_callback(err)
+        rescue Exception => error
+          error_txt = ::CRDE::Kernel.report_exception(error, err.caller)
+          print "Submit the file \"ErrorLog.txt\" in your project folder to the upper most script creators noted in the message.\n"
+          msgbox("An error has occurred during the game.\nPlease submit the file \"ErrorLog.txt\" in your game folder to the developer in order to fix the bug.\n")
+          filename = "ErrorLog.txt"
+          File.open(filename, 'w+') {|f| f.write(error_txt + "\n") }
+          raise  error.class, error.message, [error.backtrace.first]
+        end
+      end
+    end
+    #--------------------------------------------------------------------------
+    def execute_callback(err)
+      _execute_callback(err.callback, err.cb_args)
+    end
+    #--------------------------------------------------------------------------
+    # * Check the arguments whether is OK
+    #   Params:
+    #   exp_num:: Valid argments count
+    #   args:: An [Array] that contains the args to be checked
+    #   cond:: A [Proc] to determine whether the argument is OK, default is
+    #          to check whether is nil
+    #   Alias:
+    #   check_argument, check_arg, check_args
+    #--------------------------------------------------------------------------
+    def check_arguments(exp_num, args, cond=nil)
+      cond = Proc.new{|n| !n.nil?} if cond.nil?
+      return exp_num == args.select{|n| cond.call(n)}.size
+    end
+    alias :check_argument :check_arguments
+    alias :check_arg :check_arguments
+    alias :check_args :check_arguments
+    #--------------------------------------------------------------------------
+    private
+    #--------------------------------------------------------------------------
+    def _execute_callback(_method, args)
+      _method.call(*args)
+    end
+    #--------------------------------------------------------------------------
+    def _raise_error(err)
+      msg  = SymTable[err.symbol] || '' + err.ex_info
+      args = (err.err_args || []) << msg
+      raise_method = nil
+      case err.symbol
+      when :dependency_error
+        _dependency_error(*args)
+      when :type_error
+        _type_error(*args)
+      when :argument_error
+        _argument_error(*args)
+        raise_method = self.method(:_argument_error)
+      when :data_overflow
+        _overflow_error(*args)
+      when :secure_hash_failed
+        args = [SecurityError, msg]
+        _standard_error(*args)
+      when :file_missing, :config_error
+        args = [LoadError, msg]
+        _standard_error(*args)
+      else
+        raise RuntimeError, "Unknown errno symbol: #{msg}"
+      end
+    end
+    #--------------------------------------------------------------------------
+    # * Raise a type error
+    #   Params:
+    #   exp:: Expected class name
+    #   rec:: Received class name
+    #   msg:: Message to display (this arg is passed automatically)
+    #--------------------------------------------------------------------------
+    def _type_error(exp, rec, msg)
+      raise TypeError, sprintf(msg, exp, rec)
+    end
+    #--------------------------------------------------------------------------
+    # * Raise when depdency script is missing
+    #   Params:
+    #   req:: The required depedecny script
+    #   src:: Source script that require the depdency file
+    #   msg:: Message to display (this arg is passed automatically)
+    #--------------------------------------------------------------------------
+    def _dependency_error(req, src, msg)
+      raise LoadError, sprintf(msg, req, src)
+    end
+    #--------------------------------------------------------------------------
+    # * Raise when argument is something wrong
+    #   Params:
+    #   exp:: Number of expected arguments, could be an array
+    #   rec:: Number of received arguments
+    #   msg:: Message to display (this arg is passed automatically)
+    #--------------------------------------------------------------------------
+    def _argument_error(exp, rec, msg)
+      exp = exp.join(" or ") if exp.is_a?(Array)
+      raise ArgumentError, sprintf(msg, exp, rec)
+    end
+    #--------------------------------------------------------------------------
+    # * Raise when numeric out of valid range
+    #   Params:
+    #   type:: Type/class of data
+    #--------------------------------------------------------------------------
+    def _overflow_error(type, msg)
+      raise ArgumentError, sprintf(msg, type)
+    end
+    #--------------------------------------------------------------------------
+    def _standard_error(errno, msg)
+      raise errno, msg
+    end
+    end # eigen class
+  end # Errno
   #=============================================================================
   # * APIs
   #=============================================================================
@@ -85,11 +335,15 @@ module CRDE
     UpdateWindow         = Win32API.new('user32', 'UpdateWindow', 'l', 'l')
     WcharToMulByte       = Win32API.new('kernel32', 'WideCharToMultiByte', 'ilpipipp', 'p')
     WritePPString        = Win32API.new('kernel32', 'WritePrivateProfileString', 'pppp', 'i')
-  end
+  end # API
+  #=============================================================================
+  # * Module that related to RMVA build-in RPG stuff
+  #=============================================================================
+  module RPG
   #=============================================================================
   # * Feature constants form BattlerBase for includes
   #=============================================================================
-  module Kernel::Features
+  module Features
     FEATURE_ELEMENT_RATE    =   Game_BattlerBase::FEATURE_ELEMENT_RATE    # Element Rate
     FEATURE_DEBUFF_RATE     =   Game_BattlerBase::FEATURE_DEBUFF_RATE     # Debuff Rate
     FEATURE_STATE_RATE      =   Game_BattlerBase::FEATURE_STATE_RATE      # State Rate
@@ -119,7 +373,69 @@ module CRDE
     FLAG_ID_GUARD           =   Game_BattlerBase::FLAG_ID_GUARD           # guard
     FLAG_ID_SUBSTITUTE      =   Game_BattlerBase::FLAG_ID_SUBSTITUTE      # substitute
     FLAG_ID_PRESERVE_TP     =   Game_BattlerBase::FLAG_ID_PRESERVE_TP     # preserve TP
+  end # Features
+  end # RPG
+end
+#===============================================================================
+# * Basic Object
+#===============================================================================
+class Object
+  #------------------------------------------------------------------------
+  alias :ruby_class :class # Alias for class prevent misuse of Game_Actor
+  #------------------------------------------------------------------------
+  def eigenclass
+    class << self
+      return self
+    end
   end
+  #------------------------------------------------------------------------
+  # * Set hashid
+  #------------------------------------------------------------------------
+  def hash_self
+    return (@hashid = self.hash)
+  end
+  #------------------------------------------------------------------------
+  def hashid
+    hash_self if @hashid.nil?
+    return @hashid
+  end
+  #------------------------------------------------------------------------
+  def to_bool
+    return true
+  end
+  #------------------------------------------------------------------------
+  # * Pointer address
+  #------------------------------------------------------------------------
+  def ptr
+    object_id << 1
+  end
+end
+#===============================================================================
+# * True/Flase/Nil class
+#===============================================================================
+class TrueClass
+  def to_i; return 1; end
+  def ptr;  return CRDE::Kernel::RUBY_Qtrue; end 
+end
+#----------------------------------------------------------------------------
+class FalseClass
+  def to_i; return CRDE::Kernel::RUBY_Qfalse; end
+end
+#==========================================================================
+class NilClass
+  #----------------------------------------------------------------------------
+  # *) Convert to boolean
+  #----------------------------------------------------------------------------
+  def to_bool; return false; end
+  def ptr; return CRDE::Kernel::RUBY_Qnil; end
+end
+#==========================================================================
+class Fixnum
+  def ptr; object_id; end
+end
+#==========================================================================
+class Symbol
+  def ptr; object_id; end
 end
 #==========================================================================
 # ** RPG::BaseItem
