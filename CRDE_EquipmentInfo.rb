@@ -49,7 +49,6 @@ module CRDE
       :param          => [FeatureNormalParam, ''],                  # Basic parameter
       :xparam         => [FEATURE_XPARAM, ''],                      # Ex-Parameter
       :sparam         => [FEATURE_SPARAM, ''],                      # Sp-Parameter
-
       :param_rate     => [FEATURE_PARAM, 'Param multipler'],        # Parameter
       :special_flag   => [FEATURE_SPECIAL_FLAG, 'Special'],         # Special feature flag
       :element_rate   => [FEATURE_ELEMENT_RATE, 'Element Rate'],    # Element Rate
@@ -183,6 +182,14 @@ module CRDE
     InverseColorFeature = [
       FEATURE_STYPE_SEAL, FEATURE_SKILL_SEAL, FEATURE_EQUIP_FIX,
       FEATURE_EQUIP_SEAL, FEATURE_ELEMENT_RATE,
+    ]
+    #---------------------------------------------------------------------
+    # * The state id that is actually goos should inverse color
+    #   because state resist and lower state rate are usually used 
+    #   in debuff. (Lower chance to get debuff or restist debuff is green)
+    #   So buff state id goes here
+    InverseColorStateID = [
+      0, # example
     ]
     #---------------------------------------------------------------------
     # * The value of given feature id will disaply as percent
