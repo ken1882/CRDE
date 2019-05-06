@@ -1,6 +1,6 @@
 #=============================================================================#
 #   CRDE - Kernel                                                             #
-#   Version: 0.1.0                                                            #  
+#   Version: 0.1.1                                                            #  
 #   Author: Compeador                                                         #  
 #   Last update: 2019.05.06                                                   #  
 #=============================================================================#
@@ -54,12 +54,41 @@ module CRDE
     SecureMode = true
   end # Config
   #=============================================================================
+  module Kernel
+    #------------------------------------------------------------------------------
+    def report_exception(error, ex_caller=[])
+      scripts_name = load_data('Data/Scripts.rvdata2')
+      scripts_name.collect! {|script|  script[1]  }
+      backtrace = []
+      (error.backtrace + ex_caller).each_with_index {|line,i|
+        if line =~ /{(.*)}(.*)/
+          backtrace << (scripts_name[$1.to_i] + $2)
+        elsif line.start_with?(':1:')
+          break
+        else
+          backtrace << line
+        end
+      }
+      error_line = backtrace.first
+      backtrace[0] = ''
+      err_class = " (#{error.class})"
+      back_trace_txt = backtrace.join("\n\tfrom ")
+      error_txt = sprintf("%s %s %s %s %s %s",error_line, ": ", error.message, err_class, back_trace_txt, "\n" )
+      print error_txt
+      return error_txt
+    end
+  end
+  #=============================================================================
   # ** Object that includes in module will block some method access
   #=============================================================================
   module SecureObject
     #--------------------------------------------------------------------------
     def block_insure_action(msg)
-      raise SecurityError, "Insecure operation: #{msg}"
+      begin
+        raise SecurityError, "Insecure operation: #{msg}"
+      rescue Exception => err
+        ::CRDE::Kernel::report_exception(err)
+      end
     end
     #--------------------------------------------------------------------------
     def send(*args)
@@ -106,28 +135,6 @@ module CRDE
     #--------------------------------------------------------------------------
     def ID2SYM(address)
       return ObjectSpace._id2ref(address >> RUBY_SPECIAL_SHIFT)
-    end
-    #------------------------------------------------------------------------------
-    def report_exception(error, ex_caller=[])
-      scripts_name = load_data('Data/Scripts.rvdata2')
-      scripts_name.collect! {|script|  script[1]  }
-      backtrace = []
-      (error.backtrace + ex_caller).each_with_index {|line,i|
-        if line =~ /{(.*)}(.*)/
-          backtrace << (scripts_name[$1.to_i] + $2)
-        elsif line.start_with?(':1:')
-          break
-        else
-          backtrace << line
-        end
-      }
-      error_line = backtrace.first
-      backtrace[0] = ''
-      err_class = " (#{error.class})"
-      back_trace_txt = backtrace.join("\n\tfrom ")
-      error_txt = sprintf("%s %s %s %s %s %s",error_line, ": ", error.message, err_class, back_trace_txt, "\n" )
-      print error_txt
-      return error_txt
     end
     #--------------------------------------------------------------------------
     end # class << self
@@ -532,6 +539,74 @@ class Sprite
     return self.visible
   end
   #---------------------------------------------------------------------------
+end
+#===============================================================================
+# ** DataManager
+#===============================================================================
+module DataManager
+  include CRDE::SecureObject if CRDE::Config::SecureMode
+  #------------------------------------------------------------------------
+  # * Listener list when loading note tag of RPG objects
+  @notetag_listeners = {
+    RPG::BaseItem   => [],
+    RPG::UsableItem => [],
+    RPG::EquipItem  => [],
+    RPG::Actor      => [],
+    RPG::Class      => [],
+    RPG::Skill      => [],
+    RPG::Item       => [],
+    RPG::Weapon     => [],
+    RPG::Armor      => [],
+    RPG::State      => [],
+    RPG::Enemy      => [],
+    RPG::Event      => [],
+    RPG::Map        => []
+  }
+  #------------------------------------------------------------------------
+  NotetagLoadListener = Struct.new(:klass, :proc)
+  #------------------------------------------------------------------------
+  class << self
+  include CRDE::SecureObject if CRDE::Config::SecureMode
+  #------------------------------------------------------------------------
+  alias load_database_crde load_database
+  def load_database
+    load_database_crde
+    load_notetags_crde
+  end
+  #------------------------------------------------------------------------
+  # * Register listener when iterating through each items
+  #   klass:: Listener of the RPG class
+  #   proc:: Proc/Method to do the processing, argument is the RPG object
+  #   Example:
+  #   +(RPG::Weapon, Proc.new{|obj| puts "Weapon note: #{obj.note}"})+
+  #------------------------------------------------------------------------
+  def register_notetag_listener(klass, proc)
+    @notetag_listeners[klass].push(NotetagLoadListener.new(klass, proc))
+  end
+  #------------------------------------------------------------------------
+  def load_notetags_crde
+    groups = [$data_actors, $data_classes, $data_skills, $data_items,
+    $data_weapons, $data_armors, $data_enemies, $data_states]
+    
+    groups.each do |group|
+      @notetag_listeners.each do |listener_class, listeners|
+        next unless group[1].is_a?(listener_class)
+        load_group_notetag(group, listeners)
+      end
+    end
+  end
+  #------------------------------------------------------------------------
+  def load_group_notetag(group, listeners)
+    group.each do |obj|
+      next unless obj
+      listeners.each do |listener|
+        listener.proc.call(obj)
+      end
+    end
+  end
+  #------------------------------------------------------------------------
+  end # eigenclass
+  #------------------------------------------------------------------------
 end
 #==============================================================================
 # ** Window_Base

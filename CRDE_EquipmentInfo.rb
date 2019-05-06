@@ -1,6 +1,6 @@
 #=============================================================================#
 #   CRDE - Equipment Info                                                     #
-#   Version: 1.0.1                                                            #  
+#   Version: 1.0.2                                                            #  
 #   Author: Compeador                                                         #  
 #   Last update: 2019.05.06                                                   #  
 #=============================================================================#
@@ -187,7 +187,10 @@ module CRDE
     # * The state id that is actually goos should inverse color
     #   because state resist and lower state rate are usually used 
     #   in debuff. (Lower chance to get debuff or restist debuff is green)
-    #   So buff state id goes here
+    #   So buff state id goes here.
+    #   Or you can just add:
+    #   <diff inverse color>
+    #   in the state note tag box
     InverseColorStateID = [
       0, # example
     ]
@@ -201,6 +204,13 @@ module CRDE
     #=====================================================================#
     # Please don't edit anything below unless you know what you're doing! #
     #^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^#
+
+    InverseStateRegex = /<diff(.?)inverse(.?)color>/i
+    ::DataManager.register_notetag_listener(::RPG::State, Proc.new{|obj|
+      obj.note.split(/[\r\n]+/).each do |line|
+        InverseColorStateID.push(obj.id) if line =~ InverseStateRegex
+      end
+    })
 
     # Strcuture holds compare result of each difference
     DiffInfo = Struct.new(:feature_id, :data_id, :value, :display_str, :group_text)
