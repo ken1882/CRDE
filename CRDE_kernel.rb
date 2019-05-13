@@ -1,8 +1,8 @@
 #=============================================================================#
 #   CRDE - Kernel                                                             #
-#   Version: 0.1.1                                                            #  
+#   Version: 0.1.2                                                            #  
 #   Author: Compeador                                                         #  
-#   Last update: 2019.05.06                                                   #  
+#   Last update: 2019.05.13                                                   #  
 #=============================================================================#
 $imported = {} if $imported.nil?
 $imported[:CRDE_Kernel] = true
@@ -52,11 +52,17 @@ module CRDE
     # If set to true, secure codes will be implemented to avoid your
     # game being exploited. Notice that nothing is 100% guaranteed safe
     SecureMode = true
+
+    # Default encoding
+    DefaultEncoding = "utf-8"
+    $default_encoding = DefaultEncoding
   end # Config
   #=============================================================================
   module Kernel
+    Version      = "0.1.2"
+    PaddingWidth = 12
     #------------------------------------------------------------------------------
-    def report_exception(error, ex_caller=[])
+    def self.report_exception(error, ex_caller=[])
       scripts_name = load_data('Data/Scripts.rvdata2')
       scripts_name.collect! {|script|  script[1]  }
       backtrace = []
@@ -77,7 +83,83 @@ module CRDE
       print error_txt
       return error_txt
     end
-  end
+    #--------------------------------------------------------------------------
+    # * Text wrap for window contents
+    #--------------------------------------------------------------------------
+    def self.textwrap(full_text, line_width, sample_bitmap = nil)
+      return [] if full_text.nil?
+      if sample_bitmap.nil?
+        using_sample = true
+        sample_bitmap = Bitmap.new(1,1)
+      else
+        using_sample  = false
+      end
+      raise TypeError unless full_text.is_a?(String)
+      full_text   = full_text.dup.force_encoding($default_encoding)
+      
+      wraped_text = []
+      cur_width   = PaddingWidth
+      line        = ""
+      bk_full     = '　'.force_encoding($default_encoding)
+      bk_half     = ' '.force_encoding($default_encoding)
+      strings     = full_text.gsub(bk_full, bk_half).split(/[\r\n ]+/i)
+      strs_n      = strings.size
+      space_width = sample_bitmap.text_size(' ').width
+      minus_width = sample_bitmap.text_size('-').width
+      
+      # while any string segment unprocessed
+      while (str = strings.first)
+        next if str.length == 0
+        width = sample_bitmap.text_size(str).width
+        endl  = false
+        # if the segment width larger than display width
+        if width + PaddingWidth >= line_width
+          line      = ""
+          cur_width = minus_width
+          strlen    = str.length
+          processed = false
+          last_i    = 0
+          # process each character on by one
+          for i in 0...strlen
+            width = sample_bitmap.text_size(str[i]).width
+            last_i = i
+            # unable to display character
+            if !processed && cur_width + width >= line_width
+              sample_bitmap.dispose if using_sample
+              return [full_text]
+            elsif cur_width + width < line_width
+              cur_width += width
+              line += str[i]
+              processed = true
+            else
+              break
+            end
+          end
+          # continue symbol character
+          line += '-'
+          # replace with left unprocessed string
+          strings[0] = str[last_i...strlen]
+          endl = true
+        # + segment width smaller than line width, continue
+        elsif cur_width + width < line_width
+          cur_width += width + space_width
+          line += strings.shift + ' '
+          endl = true if strings.size == 0
+        # + segment width over the line width, process end of line
+        else
+          endl = true
+        end
+        
+        if endl
+          wraped_text.push(line)
+          line = ""
+          cur_width = PaddingWidth
+        end
+      end
+      sample_bitmap.dispose if using_sample
+      return wraped_text
+    end # textwrap
+  end # Kernel
   #=============================================================================
   # ** Object that includes in module will block some method access
   #=============================================================================
@@ -581,6 +663,23 @@ module DataManager
   #   +(RPG::Weapon, Proc.new{|obj| puts "Weapon note: #{obj.note}"})+
   #------------------------------------------------------------------------
   def register_notetag_listener(klass, proc)
+    if klass.is_a?(Symbol)
+      case klass.to_s.downcase.to_sym
+      when :baseitem;   klass = ::RPG::BaseItem;
+      when :usableitem; klass = ::RPG::UsableItem;
+      when :equipitem;  klass = ::RPG::EquipItem;
+      when :actor;      klass = ::RPG::Actor;
+      when :skill;      klass = ::RPG::Skill;
+      when :item;       klass = ::RPG::Item;
+      when :weapon;     klass = ::RPG::Weapon;
+      when :armor;      klass = ::RPG::Armor;
+      when :state;      klass = ::RPG::State;
+      when :map;        klass = ::RPG::Map;
+      when :enemy;      klass = ::RPG::Enemy;
+      when :class;      klass = ::RPG::Class;
+      when :event;      klass = ::RPG::Event;
+      end
+    end
     @notetag_listeners[klass].push(NotetagLoadListener.new(klass, proc))
   end
   #------------------------------------------------------------------------

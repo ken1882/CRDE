@@ -194,6 +194,9 @@ module CRDE
     InverseColorStateID = [
       0, # example
     ]
+
+    # Recommending add note in the skill instead
+    InverseColorSkillID = []
     #---------------------------------------------------------------------
     # * The value of given feature id will disaply as percent
     PercentageFeaure = [
@@ -205,10 +208,17 @@ module CRDE
     # Please don't edit anything below unless you know what you're doing! #
     #^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^#
 
-    InverseStateRegex = /<diff(.?)inverse(.?)color>/i
-    ::DataManager.register_notetag_listener(::RPG::State, Proc.new{|obj|
+    InverseColorRegex = /<diff(.?)inverse(.?)color>/i
+
+    ::DataManager.register_notetag_listener(:state, Proc.new{|obj|
       obj.note.split(/[\r\n]+/).each do |line|
-        InverseColorStateID.push(obj.id) if line =~ InverseStateRegex
+        InverseColorStateID.push(obj.id) if line =~ InverseColorRegex
+      end
+    })
+
+    ::DataManager.register_notetag_listener(:skill, Proc.new{|obj|
+      obj.note.split(/[\r\n]+/).each do |line|
+        InverseColorSkillID.push(obj.id) if line =~ InverseColorRegex
       end
     })
 
