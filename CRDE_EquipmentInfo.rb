@@ -1,8 +1,8 @@
 #=============================================================================#
 #   CRDE - Equipment Info                                                     #
-#   Version: 1.0.2                                                            #  
+#   Version: 1.0.3                                                            #  
 #   Author: Compeador                                                         #  
-#   Last update: 2019.05.06                                                   #  
+#   Last update: 2021.09.07                                                   #  
 #=============================================================================#
 $imported = {} if $imported.nil?
 $imported[:CRDE_EQInfo] = true
@@ -10,6 +10,7 @@ $imported[:CRDE_EQInfo] = true
 #                               ** Update log **                              #
 #-----------------------------------------------------------------------------#
 #                                                                             #
+# -- 2021.09.07: Add more inverse color and no color option for equips        #
 # -- 2019.05.06: Start the script and completed                               #
 #                                                                             #
 #=============================================================================#
@@ -182,6 +183,32 @@ module CRDE
     InverseColorFeature = [
       FEATURE_STYPE_SEAL, FEATURE_SKILL_SEAL, FEATURE_EQUIP_FIX,
       FEATURE_EQUIP_SEAL, FEATURE_ELEMENT_RATE,
+    ]
+    #---------------------------------------------------------------------
+    # * The feature id that either good nor bad (will not change color)
+    NoColorFeature = [
+
+    ]
+    #---------------------------------------------------------------------
+    # * The xparam that is actually not good
+    InverseColorXParam = [
+    ]
+    #---------------------------------------------------------------------
+    # * The sparam that is actually not good
+    InverseColorSParam = [
+      4, # MCR
+      6, # PDR
+      7, # MDR
+      8, # FDR
+    ]
+    #---------------------------------------------------------------------
+    # * Xparam that actually has no good or bad (will not change color)
+    NoColorXParam = [
+    ]
+    #---------------------------------------------------------------------
+    # * Sparam that actually has no good or bad (will not change color)
+    NoColorSParam = [
+      0 # TGR
     ]
     #---------------------------------------------------------------------
     # * The state id that is actually goos should inverse color
